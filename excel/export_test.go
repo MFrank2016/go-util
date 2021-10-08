@@ -23,5 +23,46 @@ func TestExportExcel(t *testing.T) {
 		IgnoreField: 2,
 		Score:       61.3,
 	})
-	ExportExcel(records, "test.xlsx")
+	ExportExcelFromSlice(records, &ExportConfig{
+		Mode:       ExportTaggedField,
+		OutputPath: "TestExcel.xlsx",
+	})
+
+	ExportExcelFromSlice(records, &ExportConfig{
+		Mode:       ExportAllField,
+		OutputPath: "TestExcel2.xlsx",
+	})
+
+	ExportExcelFromSlice(records, &ExportConfig{
+		Mode:       ExportByHeaders,
+		OutputPath: "TestExcel3.xlsx",
+		Headers:    []string{"姓名", "分数"},
+		Header2FieldMap: map[string]string{
+			"姓名": "Name",
+			"分数": "Score",
+		},
+	})
+}
+
+func Test_convertToTitle(t *testing.T) {
+	type args struct {
+		columnNumber int
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{name: "1", args: args{columnNumber: 1}, want: "A"},
+		{name: "27", args: args{columnNumber: 27}, want: "AA"},
+		{name: "2", args: args{columnNumber: 2}, want: "B"},
+		{name: "28", args: args{columnNumber: 28}, want: "AB"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := convertToTitle(tt.args.columnNumber); got != tt.want {
+				t.Errorf("convertToTitle() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
