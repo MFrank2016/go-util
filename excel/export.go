@@ -135,7 +135,7 @@ func setCellValue(sheetName string, row int, alpha string, xlsx *excelize.File, 
 	case reflect.Float32, reflect.Float64:
 		xlsx.SetCellValue(sheetName, fmt.Sprintf("%s%d", alpha, row), t.Elem().FieldByName(colName).Float())
 	default:
-		item := reflect.ValueOf(t).Elem().FieldByName(colName).Interface()
+		item := t.Elem().FieldByName(colName).Interface()
 		bytes, _ := json.Marshal(&item)
 		xlsx.SetCellValue(sheetName, fmt.Sprintf("%s%d", alpha, row), string(bytes))
 	}
