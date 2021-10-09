@@ -24,7 +24,7 @@ var (
 	HeaderConfigErr ExportExcelErr = errors.New("header config err")
 )
 
-// ExportExcelFromSlice 从结构体数组中导出
+// ExportExcelFromSlice 从结构体切片中导出
 func ExportExcelFromSlice(records interface{}, exportConfig *ExportConfig) error {
 	if !isSlice(records) {
 		return RecordTypeErr
@@ -71,9 +71,6 @@ func ExportExcelFromSlice(records interface{}, exportConfig *ExportConfig) error
 		for row := 0; row < s.Len(); row++ {
 			item := sl.Index(row)
 			itemType := item.Type().Elem()
-			if itemType.NumField() > 26*27 {
-
-			}
 			for i := 0; i < itemType.NumField(); i++ {
 				field := itemType.Field(i)
 				columnAxis := convertToTitle(i + 1)
