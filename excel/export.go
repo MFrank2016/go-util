@@ -6,9 +6,8 @@ import (
 	"reflect"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/360EntSecGroup-Skylar/excelize"
+	jsoniter "github.com/json-iterator/go"
 )
 
 const XlsxTagName = "xlsx"
@@ -18,10 +17,14 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 type ExportExcelErr error
 
 var (
-	RecordTypeErr   ExportExcelErr = errors.New("records is not slice")
-	ConfigErr       ExportExcelErr = errors.New("export config err")
-	SliceEmptyErr   ExportExcelErr = errors.New("slice is empty")
-	HeaderConfigErr ExportExcelErr = errors.New("header config err")
+	RecordTypeErr         ExportExcelErr = errors.New("records is not slice")
+	ConfigErr             ExportExcelErr = errors.New("export config err")
+	SliceEmptyErr         ExportExcelErr = errors.New("slice is empty")
+	HeaderConfigErr       ExportExcelErr = errors.New("header config err")
+	FieldNotExistErr      ExportExcelErr = errors.New("header field not exist")
+	ExportModeNotExistErr ExportExcelErr = errors.New("export mode not exist")
+	NoXlsxTagFoundErr     ExportExcelErr = errors.New("xlsx tag not found")
+	AxisOutOfIndexErr     ExportExcelErr = errors.New("column axis out of index")
 )
 
 // ExportExcelFromSlice 从结构体切片中导出
@@ -33,42 +36,62 @@ func ExportExcelFromSlice(records interface{}, exportConfig *ExportConfig) error
 	if sl.Len() == 0 {
 		return SliceEmptyErr
 	}
-
 	if checkConfig(exportConfig) {
 		return ConfigErr
+	}
+
+	var exportStrategy ExportStrategy
+	switch exportConfig.Mode {
+	case ExportTaggedField:
+		exportStrategy = &exportTaggedFieldStrategy{}
+	case ExportAllField:
+		exportStrategy = &exportAllFieldStrategy{}
+	case ExportByHeaders:
+		exportStrategy = &exportByHeadersStrategy{}
+	}
+	if exportStrategy == nil {
+		return ExportModeNotExistErr
+	}
+	strategyInitErr := exportStrategy.Init(sl.Index(0), exportConfig)
+	if strategyInitErr != nil {
+		return strategyInitErr
+	}
+	headers, getHeadersErr := exportStrategy.GetHeaders()
+	if getHeadersErr != nil {
+		return getHeadersErr
 	}
 
 	xlsx := excelize.NewFile()
 	sheetName := "Sheet1"
 	index := xlsx.NewSheet(sheetName)
 
-	s := reflect.ValueOf(records)
-
-	if exportConfig.Mode == ExportTaggedField {
-		for row := 0; row < s.Len(); row++ {
-			item := sl.Index(row)
-			itemType := item.Type().Elem()
-			for i := 0; i < itemType.NumField(); i++ {
-				field := itemType.Field(i)
-				xlsxTag := field.Tag.Get(XlsxTagName)
-				if len(xlsxTag) == 0 || !strings.Contains(xlsxTag, "-") {
-					// 忽略没有设置tag的字段
-					continue
-				}
-
-				ss := strings.Split(xlsxTag, "-")
-				columnAxis := ss[0]
-				// 设置表头
-				if row == 0 {
-					header := ss[1]
-					xlsx.SetCellValue(sheetName, fmt.Sprintf("%s%d", columnAxis, row+1), header)
-				}
-				// 设置内容
-				setCellValue(sheetName, row+2, columnAxis, xlsx, field, item, field.Name)
+	for row := 0; row < sl.Len(); row++ {
+		item := sl.Index(row)
+		itemType := item.Type().Elem()
+		for i, header := range headers {
+			fieldName, getFieldNameErr := exportStrategy.GetFieldNameByHeader(header)
+			if getFieldNameErr != nil {
+				return getFieldNameErr
 			}
+			field, exist := itemType.FieldByName(fieldName)
+			if !exist {
+				return FieldNotExistErr
+			}
+			colAxis, getColErr := exportStrategy.GetColAxis(i)
+			if getColErr != nil {
+				return getColErr
+			}
+
+			// 设置表头
+			if row == 0 {
+				xlsx.SetCellValue(sheetName, fmt.Sprintf("%s%d", colAxis, row+1), header)
+			}
+			// 设置内容
+			setCellValue(sheetName, row+2, colAxis, xlsx, field, item, fieldName)
 		}
-	} else if exportConfig.Mode == ExportAllField {
-		for row := 0; row < s.Len(); row++ {
+	}
+	if exportConfig.Mode == ExportAllField {
+		for row := 0; row < sl.Len(); row++ {
 			item := sl.Index(row)
 			itemType := item.Type().Elem()
 			for i := 0; i < itemType.NumField(); i++ {
@@ -89,8 +112,8 @@ func ExportExcelFromSlice(records interface{}, exportConfig *ExportConfig) error
 		if len(headers) == 0 || len(header2FieldMap) != len(headers) {
 			return HeaderConfigErr
 		}
-		for row := 0; row < s.Len(); row++ {
-			t := s.Index(row)
+		for row := 0; row < sl.Len(); row++ {
+			t := sl.Index(row)
 			d := t.Type().Elem()
 			for col, header := range headers {
 				alpha := convertToTitle(col + 1)
@@ -162,6 +185,14 @@ func isSlice(records interface{}) bool {
 	return reflect.TypeOf(records).Kind() == reflect.Slice
 }
 
+type ExportConfig struct {
+	Mode               ExportMode        // 导出模式
+	OutputPath         string            // 文件导出路径
+	Headers            []string          // excel 列表头
+	Header2FieldMap    map[string]string // excel 列表头到结构体字段名的映射
+	SubStructFieldName string            // 附属子结构体字段名，设置该字段则会进行导出，不设置则不导出
+}
+
 type ExportMode int
 
 const (
@@ -170,9 +201,121 @@ const (
 	ExportByHeaders   ExportMode = 2 // 根据 ExportConfig 的 Headers 来决定导出字段
 )
 
-type ExportConfig struct {
-	Mode            ExportMode        // 导出模式
-	OutputPath      string            // 文件导出路径
-	Headers         []string          // excel 列表头
-	Header2FieldMap map[string]string // excel 列表头到结构体字段名的映射
+type ExportStrategy interface {
+	Init(item reflect.Value, config *ExportConfig) error
+	GetHeaders() (headers []string, err error)
+	GetFieldNameByHeader(header string) (fieldName string, err error)
+	GetColAxis(columnNum int) (axis string, err error)
+}
+
+type exportByHeadersStrategy struct {
+	headers             []string
+	header2FieldNameMap map[string]string
+}
+
+func (s *exportByHeadersStrategy) Init(item reflect.Value, config *ExportConfig) error {
+	if len(config.Headers) == 0 || len(config.Header2FieldMap) != len(config.Headers) {
+		return HeaderConfigErr
+	}
+	s.headers = config.Headers
+	s.header2FieldNameMap = config.Header2FieldMap
+	return nil
+}
+
+func (s *exportByHeadersStrategy) GetHeaders() (headers []string, err error) {
+	return s.headers, nil
+}
+
+func (s *exportByHeadersStrategy) GetFieldNameByHeader(header string) (fieldName string, err error) {
+	name, exist := s.header2FieldNameMap[header]
+	if !exist {
+		return "", FieldNotExistErr
+	}
+	return name, nil
+}
+
+func (s *exportByHeadersStrategy) GetColAxis(columnNum int) (axis string, err error) {
+	columnAxis := convertToTitle(columnNum + 1)
+	return columnAxis, nil
+}
+
+type exportAllFieldStrategy struct {
+	headers []string
+}
+
+func (s *exportAllFieldStrategy) Init(item reflect.Value, config *ExportConfig) error {
+	s.headers = make([]string, 0)
+	itemType := item.Type().Elem()
+	for i := 0; i < itemType.NumField(); i++ {
+		field := itemType.Field(i)
+		s.headers = append(s.headers, field.Name)
+	}
+	if len(s.headers) == 0 {
+		return NoXlsxTagFoundErr
+	}
+	return nil
+}
+
+func (s *exportAllFieldStrategy) GetHeaders() (headers []string, err error) {
+	return s.headers, nil
+}
+
+func (s *exportAllFieldStrategy) GetFieldNameByHeader(header string) (fieldName string, err error) {
+	return header, nil
+}
+
+func (s *exportAllFieldStrategy) GetColAxis(columnNum int) (axis string, err error) {
+	columnAxis := convertToTitle(columnNum + 1)
+	return columnAxis, nil
+}
+
+type exportTaggedFieldStrategy struct {
+	columnAxis          []string
+	headers             []string
+	header2FieldNameMap map[string]string
+}
+
+func (s *exportTaggedFieldStrategy) Init(item reflect.Value, config *ExportConfig) error {
+	s.columnAxis = make([]string, 0)
+	s.headers = make([]string, 0)
+	s.header2FieldNameMap = make(map[string]string)
+	itemType := item.Type().Elem()
+	for i := 0; i < itemType.NumField(); i++ {
+		field := itemType.Field(i)
+		xlsxTag := field.Tag.Get(XlsxTagName)
+		if len(xlsxTag) == 0 {
+			// 忽略没有设置tag的字段
+			continue
+		}
+		ss := strings.Split(xlsxTag, "-")
+		if len(ss) != 2 {
+			continue
+		}
+		s.columnAxis = append(s.columnAxis, ss[0])
+		s.headers = append(s.headers, ss[1])
+		s.header2FieldNameMap[ss[1]] = field.Name
+	}
+	if len(s.headers) == 0 {
+		return NoXlsxTagFoundErr
+	}
+	return nil
+}
+
+func (s *exportTaggedFieldStrategy) GetHeaders() (headers []string, err error) {
+	return s.headers, nil
+}
+
+func (s *exportTaggedFieldStrategy) GetFieldNameByHeader(header string) (fieldName string, err error) {
+	name, exist := s.header2FieldNameMap[header]
+	if !exist {
+		return "", FieldNotExistErr
+	}
+	return name, nil
+}
+
+func (s *exportTaggedFieldStrategy) GetColAxis(columnNum int) (axis string, err error) {
+	if columnNum < len(s.columnAxis) {
+		return s.columnAxis[columnNum], nil
+	}
+	return "", AxisOutOfIndexErr
 }

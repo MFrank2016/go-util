@@ -6,34 +6,73 @@ import (
 )
 
 type Record struct {
-	Name        string `xlsx:"A-姓名"`
-	Age         int    `xlsx:"B-年龄"`
-	IgnoreField int
-	Score       float64   `xlsx:"C-分数"`
-	UpdatedAt   time.Time `xlsx:"D-更新时间"`
-	TestPointer *int      `xlsx:"E-测试"`
+	Name         string `xlsx:"A-姓名"`
+	Age          int    `xlsx:"B-年龄"`
+	IgnoredField int
+	Score        float64   `xlsx:"C-分数"`
+	UpdatedAt    time.Time `xlsx:"D-更新时间"`
+	TestPointer  *int      `xlsx:"E-测试"`
+	SubRecords   []*SubRecord
+	Remark       string `xlsx:"H-备注"`
+}
+
+type SubRecord struct {
+	QuestionNum int    `xlsx:"F-题号"`
+	Answer      string `xlsx:"G-答案"`
 }
 
 func TestExportExcel(t *testing.T) {
+	subRecords := make([]*SubRecord, 0)
+	subRecords = append(subRecords, &SubRecord{
+		QuestionNum: 1,
+		Answer:      "A",
+	})
+	subRecords = append(subRecords, &SubRecord{
+		QuestionNum: 2,
+		Answer:      "B",
+	})
+	subRecords = append(subRecords, &SubRecord{
+		QuestionNum: 3,
+		Answer:      "B",
+	})
 	records := make([]*Record, 0)
 	i := 1
 	records = append(records, &Record{
-		Name:        "Frank",
-		Age:         21,
-		IgnoreField: 1,
-		Score:       98.2,
-		UpdatedAt:   time.Now(),
-		TestPointer: &i,
+		Name:         "Frank",
+		Age:          21,
+		IgnoredField: 1,
+		Score:        98.2,
+		UpdatedAt:    time.Now(),
+		TestPointer:  &i,
+		SubRecords:   subRecords,
+		Remark:       "Good job!",
+	})
+
+	subRecordsB := make([]*SubRecord, 0)
+	subRecordsB = append(subRecordsB, &SubRecord{
+		QuestionNum: 1,
+		Answer:      "C",
+	})
+	subRecordsB = append(subRecordsB, &SubRecord{
+		QuestionNum: 2,
+		Answer:      "A",
+	})
+	subRecordsB = append(subRecordsB, &SubRecord{
+		QuestionNum: 3,
+		Answer:      "B",
 	})
 	j := 2
 	records = append(records, &Record{
-		Name:        "Alice",
-		Age:         22,
-		IgnoreField: 2,
-		Score:       61.3,
-		UpdatedAt:   time.Now(),
-		TestPointer: &j,
+		Name:         "Alice",
+		Age:          22,
+		IgnoredField: 2,
+		Score:        61.3,
+		UpdatedAt:    time.Now(),
+		TestPointer:  &j,
+		SubRecords:   subRecordsB,
+		Remark:       "Keep it up!",
 	})
+
 	ExportExcelFromSlice(records, &ExportConfig{
 		Mode:       ExportTaggedField,
 		OutputPath: "TestExcel.xlsx",
