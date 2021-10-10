@@ -114,13 +114,16 @@ func ExportExcelFromSlice(records interface{}, exportConfig *ExportConfig) error
 
 func dealWithSubSliceField(item reflect.Value, xlsx *excelize.File, exportConfig *ExportConfig, exportStrategy ExportStrategy, row *int, sheetName string, colIndexBegin int) error {
 	subSlice := item.Elem().FieldByName(exportConfig.SubSliceFieldName)
+	subHeaders, getSubHeaderErr := exportStrategy.GetSubHeaders()
+	if getSubHeaderErr != nil {
+		return getSubHeaderErr
+	}
+	if len(subHeaders) == 0 {
+		return nil
+	}
 	for i := 0; i < subSlice.Len(); i++ {
 		subItem := subSlice.Index(i)
 		subItemType := subItem.Type().Elem()
-		subHeaders, getSubHeaderErr := exportStrategy.GetSubHeaders()
-		if getSubHeaderErr != nil {
-			return getSubHeaderErr
-		}
 		for j, subHeader := range subHeaders {
 			subFieldName, getSubFieldNameErr := exportStrategy.GetSubFieldNameByHeader(subHeader)
 			if getSubFieldNameErr != nil {

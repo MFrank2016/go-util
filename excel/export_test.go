@@ -115,6 +115,20 @@ func TestExportExcel(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+
+	err = ExportExcelFromSlice(records, &ExportConfig{
+		Mode:       ExportByHeaders,
+		OutputPath: "TestExcel4.xlsx",
+		Headers:    []string{"姓名", "分数"},
+		Header2FieldMap: map[string]string{
+			"姓名": "Name",
+			"分数": "Score",
+		},
+		SubSliceFieldName: "SubRecords",
+	})
+	if err != nil {
+		panic(err)
+	}
 }
 
 func Test_convertToTitle(t *testing.T) {
