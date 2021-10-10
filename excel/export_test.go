@@ -73,17 +73,25 @@ func TestExportExcel(t *testing.T) {
 		Remark:       "Keep it up!",
 	})
 
-	ExportExcelFromSlice(records, &ExportConfig{
-		Mode:       ExportTaggedField,
-		OutputPath: "TestExcel.xlsx",
+	err := ExportExcelFromSlice(records, &ExportConfig{
+		Mode:              ExportTaggedField,
+		OutputPath:        "TestExcel.xlsx",
+		SubSliceFieldName: "SubRecords",
 	})
+	if err != nil {
+		panic(err)
+	}
 
-	ExportExcelFromSlice(records, &ExportConfig{
-		Mode:       ExportAllField,
-		OutputPath: "TestExcel2.xlsx",
+	err = ExportExcelFromSlice(records, &ExportConfig{
+		Mode:              ExportAllField,
+		OutputPath:        "TestExcel2.xlsx",
+		SubSliceFieldName: "SubRecords",
 	})
+	if err != nil {
+		panic(err)
+	}
 
-	ExportExcelFromSlice(records, &ExportConfig{
+	err = ExportExcelFromSlice(records, &ExportConfig{
 		Mode:       ExportByHeaders,
 		OutputPath: "TestExcel3.xlsx",
 		Headers:    []string{"姓名", "分数"},
@@ -91,7 +99,15 @@ func TestExportExcel(t *testing.T) {
 			"姓名": "Name",
 			"分数": "Score",
 		},
+		SubSliceFieldName: "SubRecords",
+		SubHeader2FieldMap: map[string]string{
+			"题号": "QuestionNum",
+			"答案": "Answer",
+		},
 	})
+	if err != nil {
+		panic(err)
+	}
 }
 
 func Test_convertToTitle(t *testing.T) {
