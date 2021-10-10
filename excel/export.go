@@ -3,6 +3,7 @@ package excel
 import (
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 
@@ -77,38 +78,10 @@ func ExportExcelFromSlice(records interface{}, exportConfig *ExportConfig) error
 				if field.Type.Kind() != reflect.Slice {
 					return SubSliceTypeErr
 				}
-				subSlice := item.Elem().FieldByName(exportConfig.SubSliceFieldName)
-				for j := 0; j < subSlice.Len(); j++ {
-					subItem := subSlice.Index(j)
-					subItemType := subItem.Type().Elem()
-					subHeaders, getSubHeaderErr := exportStrategy.GetSubHeaders()
-					if getSubHeaderErr != nil {
-						return getSubHeaderErr
-					}
-					for j, subHeader := range subHeaders {
-						subFieldName, getSubFieldNameErr := exportStrategy.GetSubFieldNameByHeader(subHeader)
-						if getSubFieldNameErr != nil {
-							return getSubFieldNameErr
-						}
-						subField, exist := subItemType.FieldByName(subFieldName)
-						if !exist {
-							return FieldNotExistErr
-						}
-						colAxis, getColErr := exportStrategy.GetColAxis(i + j)
-						if getColErr != nil {
-							return getColErr
-						}
-						// 设置表头
-						if row == 0 {
-							xlsx.SetCellValue(sheetName, fmt.Sprintf("%s%d", colAxis, row+1), subHeader)
-						}
-
-						// 设置内容
-						setCellValue(sheetName, row+2, colAxis, xlsx, subField, subItem, subFieldName)
-					}
-					row++
+				subSliceFieldErr := dealWithSubSliceField(item, xlsx, exportConfig, exportStrategy, &row, sheetName, i)
+				if subSliceFieldErr != nil {
+					return subSliceFieldErr
 				}
-				row--
 			} else {
 				colAxis, getColErr := exportStrategy.GetColAxis(i)
 				if getColErr != nil {
@@ -127,10 +100,51 @@ func ExportExcelFromSlice(records interface{}, exportConfig *ExportConfig) error
 	}
 
 	xlsx.SetActiveSheet(index)
-	err := xlsx.SaveAs(exportConfig.OutputPath)
-	if err != nil {
-		return err
+	var ioErr error
+	if len(exportConfig.OutputPath) > 0 {
+		ioErr = xlsx.SaveAs(exportConfig.OutputPath)
+	} else {
+		ioErr = xlsx.Write(exportConfig.OutputWriter)
 	}
+	if ioErr != nil {
+		return ioErr
+	}
+	return nil
+}
+
+func dealWithSubSliceField(item reflect.Value, xlsx *excelize.File, exportConfig *ExportConfig, exportStrategy ExportStrategy, row *int, sheetName string, colIndexBegin int) error {
+	subSlice := item.Elem().FieldByName(exportConfig.SubSliceFieldName)
+	for i := 0; i < subSlice.Len(); i++ {
+		subItem := subSlice.Index(i)
+		subItemType := subItem.Type().Elem()
+		subHeaders, getSubHeaderErr := exportStrategy.GetSubHeaders()
+		if getSubHeaderErr != nil {
+			return getSubHeaderErr
+		}
+		for j, subHeader := range subHeaders {
+			subFieldName, getSubFieldNameErr := exportStrategy.GetSubFieldNameByHeader(subHeader)
+			if getSubFieldNameErr != nil {
+				return getSubFieldNameErr
+			}
+			subField, exist := subItemType.FieldByName(subFieldName)
+			if !exist {
+				return FieldNotExistErr
+			}
+			colAxis, getColErr := exportStrategy.GetColAxis(colIndexBegin + j)
+			if getColErr != nil {
+				return getColErr
+			}
+			// 设置表头
+			if *row == 0 {
+				xlsx.SetCellValue(sheetName, fmt.Sprintf("%s%d", colAxis, *row+1), subHeader)
+			}
+
+			// 设置内容
+			setCellValue(sheetName, *row+2, colAxis, xlsx, subField, subItem, subFieldName)
+		}
+		*row++
+	}
+	*row--
 	return nil
 }
 
@@ -184,7 +198,7 @@ func convertToTitle(columnNumber int) string {
 }
 
 func checkConfig(config *ExportConfig) bool {
-	return config == nil || len(config.OutputPath) == 0
+	return config == nil || (len(config.OutputPath) == 0 && config.OutputWriter == nil)
 }
 
 func isSlice(records interface{}) bool {
@@ -194,6 +208,7 @@ func isSlice(records interface{}) bool {
 type ExportConfig struct {
 	Mode               ExportMode        // 导出模式
 	OutputPath         string            // 文件导出路径
+	OutputWriter       io.Writer         // 文件输出流，优先使用导出路径
 	Headers            []string          // excel 列表头
 	Header2FieldMap    map[string]string // excel 列表头到结构体字段名的映射
 	SubSliceFieldName  string            // 附属子列表字段名，设置该字段则会进行导出，不设置则不导出

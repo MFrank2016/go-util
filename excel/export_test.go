@@ -1,6 +1,7 @@
 package excel
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -82,9 +83,15 @@ func TestExportExcel(t *testing.T) {
 		panic(err)
 	}
 
+	file, err := os.OpenFile("TestExcel22.xlsx", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
 	err = ExportExcelFromSlice(records, &ExportConfig{
-		Mode:              ExportAllField,
-		OutputPath:        "TestExcel2.xlsx",
+		Mode: ExportAllField,
+		//OutputPath:        "TestExcel2.xlsx",
+		OutputWriter:      file,
 		SubSliceFieldName: "SubRecords",
 	})
 	if err != nil {
